@@ -133,5 +133,18 @@ print(f"✅ RR MSE: {mse:.6f}")
 os.makedirs("models", exist_ok=True)
 joblib.dump(buy_model, "models/buy_model_latest.pkl")
 joblib.dump(rr_model, "models/rr_model_latest.pkl")
-
 print("💾 Models saved to models/ directory.")
+
+# === Export for use (optional) ===
+# Useful when running this as a module
+buy_model = joblib.load("models/buy_model_latest.pkl")
+rr_model = joblib.load("models/rr_model_latest.pkl")
+
+def compute_rsi_for_live(series, period=14):
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+    loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+compute_rsi = compute_rsi_for_live
