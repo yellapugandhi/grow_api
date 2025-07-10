@@ -1,125 +1,110 @@
 import streamlit as st
 import pandas as pd
-import joblib
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from growwapi import GrowwAPI
+import joblib
+import numpy as np
+from functools import lru_cache
 
-st.set_page_config(page_title="📈 Trading Signal Predictor", layout="wide")
-st.title("💹 Trading Signal Predictor")
+st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 
-# === Sidebar Auth ===
-st.sidebar.header("🔐 Groww API Auth")
+# === Groww API Auth ===
+st.sidebar.title("🔐 Groww API Auth")
 api_key = st.sidebar.text_input("Enter your Groww API token", type="password")
 
 if not api_key:
     st.warning("Please enter your Groww API token in the sidebar.")
     st.stop()
 
-# === Init Groww API ===
 groww = GrowwAPI(api_key)
-instruments_df = pd.read_csv("instruments.csv")
-groww.instruments = instruments_df
-groww._load_instruments = lambda: None
-groww._download_and_load_instruments = lambda: instruments_df
-groww.get_instrument_by_groww_symbol = lambda symbol: instruments_df[instruments_df['groww_symbol'] == symbol].iloc[0].to_dict()
+
+# === Cached Instrument Metadata ===
+@lru_cache(maxsize=1)
+def load_instruments():
+    df = pd.read_csv("instruments.csv")
+    groww.instruments = df
+    groww._load_instruments = lambda: None
+    groww._download_and_load_instruments = lambda: df
+    groww.get_instrument_by_groww_symbol = lambda symbol: df[df['groww_symbol'] == symbol].iloc[0].to_dict()
+    return df
+
+instruments_df = load_instruments()
 
 # === Load Models ===
 try:
-    buy_model = joblib.load("models/buy_model_latest.pkl")
-    rr_model = joblib.load("models/rr_model_latest.pkl")
+    from strategy_1_model import buy_model, rr_model, compute_rsi
 except Exception as e:
     st.error(f"⚠️ Failed to load models: {e}")
     st.stop()
 
-# === Compute RSI ===
-def compute_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-# === Trading Time Check ===
-now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
-    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)
-
-# === Symbol Selection ===
-symbols = instruments_df['groww_symbol'].dropna().unique()
-selected_symbol = st.sidebar.selectbox("📉 Select Symbol", sorted(symbols), index=list(symbols).index("NSE-NIFTY") if "NSE-NIFTY" in symbols else 0)
-
-# === Tabs ===
-tabs = st.tabs(["🔮 Live Prediction", "📅 Backtest"])
-
-# === Common Parameters ===
+# === Set Date Range ===
 start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 
-# === Prediction Logic ===
-def predict_and_display(symbol, start_time, end_time, interval_minutes=10, backtest=False):
-    try:
-        selected = groww.get_instrument_by_groww_symbol(symbol)
-        data = groww.get_historical_candle_data(
-            trading_symbol=selected['trading_symbol'],
-            exchange=selected['exchange'],
-            segment=selected['segment'],
-            start_time=start_time.strftime("%Y-%m-%d %H:%M:%S"),
-            end_time=end_time.strftime("%Y-%m-%d %H:%M:%S"),
-            interval_in_minutes=interval_minutes
-        )
+# === Auto Refresh (only in trading hours) ===
+if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
+    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # Refresh every 10 mins
 
-        if not data or 'candles' not in data or not data['candles']:
-            st.error("⚠️ No candle data returned.")
-            return
+# === Strategy Comparison Dropdown ===
+strategy_option = st.sidebar.selectbox("Select Strategy Version", ["Strategy 1"])
 
+# === Main Prediction Function ===
+def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
+    start_str = start_time_ist.strftime("%Y-%m-%d %H:%M:%S")
+    end_str = end_time_ist.strftime("%Y-%m-%d %H:%M:%S")
+
+    selected = groww.get_instrument_by_groww_symbol(symbol)
+
+    data = groww.get_historical_candle_data(
+        trading_symbol=selected['trading_symbol'],
+        exchange=selected['exchange'],
+        segment=selected['segment'],
+        start_time=start_str,
+        end_time=end_str,
+        interval_in_minutes=interval_minutes
+    )
+
+    if isinstance(data, dict) and 'candles' in data and len(data['candles']) > 0:
         df = pd.DataFrame(data['candles'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s', utc=True).dt.tz_convert('Asia/Kolkata')
         df.sort_values(by='timestamp', inplace=True)
         df.reset_index(drop=True, inplace=True)
 
+        # Add Features
         df['SMA_10'] = df['close'].rolling(window=10).mean()
         df['EMA_10'] = df['close'].ewm(span=10, adjust=False).mean()
         df['Momentum'] = df['close'] - df['close'].shift(10)
         df['Volatility'] = df['close'].rolling(window=10).std()
         df['RSI'] = compute_rsi(df['close'])
 
-        features = df[['SMA_10', 'EMA_10', 'RSI', 'Momentum', 'Volatility']].dropna()
+        latest = df[['SMA_10', 'EMA_10', 'RSI', 'Momentum', 'Volatility']].dropna().tail(1)
 
-        if features.empty:
-            st.warning("Not enough data to make predictions.")
+        if latest.empty:
+            st.warning("Not enough data to predict.")
             return
 
-        df = df.iloc[-len(features):]  # align
-        df['Buy_Signal'] = buy_model.predict(features)
-        df['Risk_Reward'] = rr_model.predict(features)
+        proba = buy_model.predict_proba(latest)[0]
+        buy_signal = int(proba[1] > 0.5)
+        rr_signal = rr_model.predict(latest)[0]
 
-        if backtest:
-            st.subheader("📅 Backtest Results")
-            st.line_chart(df.set_index('timestamp')[['close', 'Risk_Reward']])
-            st.dataframe(df[['timestamp', 'close', 'Buy_Signal', 'Risk_Reward']].tail(20), use_container_width=True)
-        else:
-            latest = df.iloc[-1]
-            st.metric("🕒 Last Candle", latest['timestamp'].strftime("%Y-%m-%d %H:%M:%S"))
-            st.metric("📈 Signal", "✅ BUY" if latest['Buy_Signal'] == 1 else "❌ HOLD / SELL")
-            st.metric("📊 Risk/Reward", f"{latest['Risk_Reward']:.4f}")
-            st.dataframe(df.tail(10), use_container_width=True)
+        st.metric("🕒 Last Candle", df['timestamp'].iloc[-1].strftime("%Y-%m-%d %H:%M:%S"))
+        st.metric("📈 Signal", "BUY" if buy_signal == 1 else "HOLD / SELL")
+        st.metric("🎯 Confidence", f"{proba[1]*100:.2f}%")
+        st.metric("📊 Risk/Reward", f"{rr_signal:.4f}")
+        st.dataframe(df.tail(10), use_container_width=True)
 
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
-
-# === Tab: Live ===
-with tabs[0]:
-    predict_and_display(selected_symbol, start_time_ist, end_time_ist)
-
-# === Tab: Backtest ===
-with tabs[1]:
-    backtest_start = st.date_input("📆 Backtest Start Date", value=datetime(2024, 6, 1).date())
-    backtest_end = st.date_input("📆 Backtest End Date", value=datetime.now().date())
-
-    if backtest_start >= backtest_end:
-        st.warning("Start date must be before end date.")
+        # Trade Entry Timer
+        next_candle_time = df['timestamp'].iloc[-1] + timedelta(minutes=interval_minutes)
+        remaining = next_candle_time - datetime.now(ZoneInfo("Asia/Kolkata"))
+        st.info(f"⏳ Time until next candle: {remaining.seconds // 60}m {remaining.seconds % 60}s")
     else:
-        start_bt = datetime.combine(backtest_start, datetime.min.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-        end_bt = datetime.combine(backtest_end, datetime.max.time()).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-        predict_and_display(selected_symbol, start_bt, end_bt, backtest=True)
+        st.error("⚠️ No candle data returned from Groww API.")
+
+# === Run Live Prediction ===
+live_predict()
+
+# === Manual Refresh ===
+if st.button("🔁 Refresh Now"):
+    st.rerun()
