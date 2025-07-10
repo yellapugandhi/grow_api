@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
-from time import sleep
 
-# === Groww API Auth ===
 from growwapi import GrowwAPI
 
 st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
+
+# === Groww API Auth ===
 st.sidebar.title("🔐 Groww API Auth")
 api_key = st.sidebar.text_input("Enter your Groww API token", type="password")
 
@@ -17,27 +17,30 @@ if not api_key:
 
 groww = GrowwAPI(api_key)
 
-# Load instruments.csv and patch GrowwAPI to avoid permission errors
+# === Patch Instrument Loader ===
 instruments_df = pd.read_csv("instruments.csv")
 groww.instruments = instruments_df
 groww._load_instruments = lambda: None
 groww._download_and_load_instruments = lambda: instruments_df
 groww.get_instrument_by_groww_symbol = lambda symbol: instruments_df[instruments_df['groww_symbol'] == symbol].iloc[0].to_dict()
 
-# === Import Models ===
-from strategy_1_model import buy_model, rr_model, compute_rsi
+# === Load Models ===
+try:
+    from strategy_1_model import buy_model, rr_model, compute_rsi
+except Exception as e:
+    st.error(f"⚠️ Failed to load models: {e}")
+    st.stop()
 
-# --- SET TIME RANGE ---
+# === Set Date Range ===
 start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-
-# Auto-refresh logic (if within trading hours)
 now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-if now_ist.time() >= datetime.strptime("09:15", "%H:%M").time() and now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
-    st_autorefresh = st.experimental_rerun
-    st.experimental_set_query_params(run=str(now_ist))  # Force query param change
-    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # Refresh every 600 sec = 10 min
 
+# === Auto Refresh (only in trading hours) ===
+if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
+    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # Refresh every 10 mins
+
+# === Main Prediction Function ===
 def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     start_str = start_time_ist.strftime("%Y-%m-%d %H:%M:%S")
     end_str = end_time_ist.strftime("%Y-%m-%d %H:%M:%S")
@@ -59,6 +62,7 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
         df.sort_values(by='timestamp', inplace=True)
         df.reset_index(drop=True, inplace=True)
 
+        # Add Features
         df['SMA_10'] = df['close'].rolling(window=10).mean()
         df['EMA_10'] = df['close'].ewm(span=10, adjust=False).mean()
         df['Momentum'] = df['close'] - df['close'].shift(10)
@@ -81,9 +85,9 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     else:
         st.error("⚠️ No candle data returned from Groww API.")
 
-# === Call Prediction ===
+# === Run Live Prediction ===
 live_predict()
 
-# === Optional Manual Refresh Button ===
+# === Manual Refresh ===
 if st.button("🔁 Refresh Now"):
     st.rerun()
