@@ -7,7 +7,7 @@ API_AUTH_TOKEN = "eyJraWQiOiJaTUtjVXciLCJhbGciOiJFUzI1NiJ9.eyJleHAiOjE3NTIxOTM4M
 groww = GrowwAPI(API_AUTH_TOKEN)
 
 # === Get All Instruments ===
-instruments_df = groww.get_all_instruments()
+instruments_df = pd.read_csv("instruments.csv")
 print(instruments_df.head())
 
 instruments_df['expiry_date'] = pd.to_datetime(instruments_df['expiry_date'])
