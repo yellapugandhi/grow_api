@@ -6,7 +6,9 @@ from growwapi import GrowwAPI
 import joblib
 import numpy as np
 from functools import lru_cache
+import subprocess
 import os
+import time
 
 st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 
@@ -14,12 +16,35 @@ st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 st.sidebar.title("🔐 Groww API Auth")
 api_key = st.sidebar.text_input("Enter your Groww API token", type="password")
 
+# === Retrain Button ===
+if st.sidebar.button("🧠 Retrain Model"):
+    st.sidebar.success("Retraining started... Please wait ⏳")
+    os.environ["GROWW_API_AUTH_TOKEN"] = api_key  # Set token as env var
+    log_placeholder = st.empty()
+
+    process = subprocess.Popen(
+        ["python", "strategy_1_retrain.py"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        universal_newlines=True
+    )
+
+    logs = ""
+    for line in process.stdout:
+        logs += line
+        log_placeholder.code(logs)
+
+    process.stdout.close()
+    process.wait()
+    if process.returncode == 0:
+        st.sidebar.success("✅ Retraining completed.")
+    else:
+        st.sidebar.error("❌ Retraining failed. Please check strategy_1_retrain.py.")
+
 if not api_key:
     st.warning("Please enter your Groww API token in the sidebar.")
     st.stop()
-
-# Set token for retraining
-os.environ["GROWW_API_AUTH_TOKEN"] = api_key
 
 groww = GrowwAPI(api_key)
 
@@ -35,16 +60,6 @@ def load_instruments():
 
 instruments_df = load_instruments()
 
-# === Retrain Button ===
-if st.sidebar.button("🧠 Retrain Model"):
-    with st.spinner("Retraining... Please wait..."):
-        exit_code = os.system("python strategy_1_retrain.py")
-        if exit_code == 0:
-            st.success("✅ Retraining completed successfully.")
-            st.rerun()
-        else:
-            st.error("❌ Retraining failed. Please check strategy_1_retrain.py.")
-
 # === Load Models ===
 try:
     from strategy_1_model import buy_model, rr_model, compute_rsi
@@ -57,9 +72,9 @@ start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 
-# === Auto Refresh (only in trading hours) ===
+# === Auto Refresh During Trading Hours ===
 if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
-    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # Refresh every 10 mins
+    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # Refresh every 10 min
 
 # === Strategy Comparison Dropdown ===
 strategy_option = st.sidebar.selectbox("Select Strategy Version", ["Strategy 1"])
