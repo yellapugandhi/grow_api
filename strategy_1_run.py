@@ -14,25 +14,25 @@ st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 st.sidebar.title("🔐 Groww API Auth")
 api_key = st.sidebar.text_input("Enter your Groww API token", type="password")
 
-# === Retrain Model Button ===
+# === Retrain Button ===
 if st.sidebar.button("🧠 Retrain Model"):
-    with st.spinner("Retraining... Please wait."):
-        result = os.system("python train_strategy_1.py")
-        if result == 0:
-            st.success("✅ Retraining completed!")
+    with st.spinner("Retraining... Please wait..."):
+        exit_code = os.system("python strategy_1_retrain.py")
+        if exit_code == 0:
+            st.success("✅ Retraining completed successfully.")
             st.rerun()
         else:
-            st.error("❌ Retraining failed.")
+            st.error("❌ Retraining failed. Please check `strategy_1_retrain.py`.")
 
-# === Block if no token ===
+# === Token Guard ===
 if not api_key:
     st.warning("Please enter your Groww API token in the sidebar.")
     st.stop()
 
-# === Initialize Groww API ===
+# === Initialize Groww ===
 groww = GrowwAPI(api_key)
 
-# === Cached Instrument Metadata ===
+# === Instrument Metadata ===
 @lru_cache(maxsize=1)
 def load_instruments():
     df = pd.read_csv("instruments.csv")
@@ -51,19 +51,19 @@ except Exception as e:
     st.error(f"⚠️ Failed to load models: {e}")
     st.stop()
 
-# === Set Date Range ===
+# === Set Candle Time ===
 start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 
-# === Auto Refresh in Market Hours ===
+# === Auto-refresh if market open ===
 if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
     st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)
 
-# === Strategy Dropdown ===
+# === Strategy Selector ===
 strategy_option = st.sidebar.selectbox("Select Strategy Version", ["Strategy 1"])
 
-# === Main Prediction Function ===
+# === Main Prediction ===
 def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     start_str = start_time_ist.strftime("%Y-%m-%d %H:%M:%S")
     end_str = end_time_ist.strftime("%Y-%m-%d %H:%M:%S")
@@ -115,9 +115,9 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     else:
         st.error("⚠️ No candle data returned from Groww API.")
 
-# === Run Prediction ===
+# === Run Live Predict ===
 live_predict()
 
-# === Manual Refresh ===
+# === Manual Refresh Button ===
 if st.button("🔁 Refresh Now"):
     st.rerun()
