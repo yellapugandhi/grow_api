@@ -12,10 +12,22 @@ from data import load_data
 
 warnings.filterwarnings("ignore")
 
-# === Load Token from Environment ===
+# === Load Token from Environment or Streamlit Injection ===
 AUTH_TOKEN = os.getenv("GROWW_API_AUTH_TOKEN")
+
+# Fallback: check if token is injected (from Streamlit)
+if not AUTH_TOKEN and "__streamlit_groww_token__" in globals():
+    AUTH_TOKEN = __streamlit_groww_token__
+
+# Fallback: prompt for token (only if running from CLI)
 if not AUTH_TOKEN:
-    raise EnvironmentError("⚠️ GROWW_API_AUTH_TOKEN not set in environment.")
+    try:
+        AUTH_TOKEN = input("🔐 Enter your Groww API Token: ").strip()
+    except EOFError:
+        raise EnvironmentError("❌ GROWW_API_AUTH_TOKEN not set and no input provided.")
+
+if not AUTH_TOKEN:
+    raise EnvironmentError("⚠️ GROWW_API_AUTH_TOKEN not set in environment, Streamlit, or prompt.")
 
 # === Load Data (first-time only df_4 and df_3) ===
 groww, df_4, df_3, _, _ = load_data(AUTH_TOKEN)
@@ -143,11 +155,11 @@ joblib.dump(rr_model, "models/rr_model_latest.pkl")
 print("💾 Models saved in 'models/' directory.")
 
 # === EXPORTS ===
-# Load models back for Streamlit
+# Load models back for Streamlit use
 buy_model = joblib.load("models/buy_model_latest.pkl")
 rr_model = joblib.load("models/rr_model_latest.pkl")
 
-# Export compute_rsi for streamlit
+# Export compute_rsi for Streamlit
 def compute_rsi_for_live(series, period=14):
     delta = series.diff()
     gain = delta.where(delta > 0, 0).rolling(window=period).mean()
