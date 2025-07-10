@@ -7,40 +7,14 @@ import joblib
 import numpy as np
 from functools import lru_cache
 import subprocess
-import os
-import time
+import sys
+import threading
 
 st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 
 # === Groww API Auth ===
 st.sidebar.title("🔐 Groww API Auth")
 api_key = st.sidebar.text_input("Enter your Groww API token", type="password")
-
-# === Retrain Button ===
-if st.sidebar.button("🧠 Retrain Model"):
-    st.sidebar.success("Retraining started... Please wait ⏳")
-    os.environ["GROWW_API_AUTH_TOKEN"] = api_key  # Set token as env var
-    log_placeholder = st.empty()
-
-    process = subprocess.Popen(
-        ["python", "strategy_1_retrain.py"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        bufsize=1,
-        universal_newlines=True
-    )
-
-    logs = ""
-    for line in process.stdout:
-        logs += line
-        log_placeholder.code(logs)
-
-    process.stdout.close()
-    process.wait()
-    if process.returncode == 0:
-        st.sidebar.success("✅ Retraining completed.")
-    else:
-        st.sidebar.error("❌ Retraining failed. Please check strategy_1_retrain.py.")
 
 if not api_key:
     st.warning("Please enter your Groww API token in the sidebar.")
@@ -72,14 +46,14 @@ start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 
-# === Auto Refresh During Trading Hours ===
+# === Auto Refresh (during trading hours) ===
 if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
-    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # Refresh every 10 min
+    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # 10 min refresh
 
-# === Strategy Comparison Dropdown ===
+# === Strategy Dropdown ===
 strategy_option = st.sidebar.selectbox("Select Strategy Version", ["Strategy 1"])
 
-# === Main Prediction Function ===
+# === Live Prediction ===
 def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     start_str = start_time_ist.strftime("%Y-%m-%d %H:%M:%S")
     end_str = end_time_ist.strftime("%Y-%m-%d %H:%M:%S")
@@ -101,7 +75,6 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
         df.sort_values(by='timestamp', inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        # Add Features
         df['SMA_10'] = df['close'].rolling(window=10).mean()
         df['EMA_10'] = df['close'].ewm(span=10, adjust=False).mean()
         df['Momentum'] = df['close'] - df['close'].shift(10)
@@ -131,9 +104,38 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     else:
         st.error("⚠️ No candle data returned from Groww API.")
 
-# === Run Live Prediction ===
+# === Run Prediction ===
 live_predict()
 
-# === Manual Refresh ===
+# === Retrain Model Button + Log ===
+st.sidebar.markdown("---")
+st.sidebar.subheader("🧠 Retrain")
+if st.sidebar.button("🧠 Retrain Model"):
+    with st.expander("📄 Retrain Logs", expanded=True):
+        st.info("🔄 Retraining started...")
+        log_placeholder = st.empty()
+
+        def stream_logs():
+            process = subprocess.Popen(
+                [sys.executable, "strategy_1_retrain.py"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            logs = ""
+            for line in iter(process.stdout.readline, ''):
+                logs += line
+                log_placeholder.code(logs, language='bash')
+            process.stdout.close()
+            process.wait()
+            if process.returncode == 0:
+                st.success("✅ Retraining completed.")
+            else:
+                st.error("❌ Retraining failed. Check the logs above.")
+
+        thread = threading.Thread(target=stream_logs)
+        thread.start()
+
+# === Manual Refresh Button ===
 if st.button("🔁 Refresh Now"):
     st.rerun()
