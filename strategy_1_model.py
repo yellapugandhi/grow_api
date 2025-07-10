@@ -143,6 +143,11 @@ joblib.dump(rr_model, "models/rr_model_latest.pkl")
 print("💾 Models saved in 'models/' directory.")
 
 # === EXPORTS ===
+# Load models back for Streamlit
+buy_model = joblib.load("models/buy_model_latest.pkl")
+rr_model = joblib.load("models/rr_model_latest.pkl")
+
+# Export compute_rsi for streamlit
 def compute_rsi_for_live(series, period=14):
     delta = series.diff()
     gain = delta.where(delta > 0, 0).rolling(window=period).mean()
@@ -150,4 +155,4 @@ def compute_rsi_for_live(series, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-compute_rsi = compute_rsi_for_live  # for Streamlit live prediction
+compute_rsi = compute_rsi_for_live
