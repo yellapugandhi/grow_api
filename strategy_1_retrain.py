@@ -13,7 +13,10 @@ from data import load_data
 warnings.filterwarnings("ignore")
 
 # === Accept token ===
-token = os.getenv("GROWW_API_AUTH_TOKEN") or input("🔐 Enter your Groww API Token: ").strip()
+token = os.getenv("GROWW_API_AUTH_TOKEN")
+if not token:
+    raise EnvironmentError("❌ GROWW_API_AUTH_TOKEN not set in environment.")
+
 
 if not token:
     raise ValueError("❌ Groww API token not provided.")
