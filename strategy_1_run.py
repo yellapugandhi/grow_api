@@ -8,7 +8,7 @@ import numpy as np
 from functools import lru_cache
 import subprocess
 import sys
-import threading
+import time
 
 st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 
@@ -46,14 +46,14 @@ start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 
-# === Auto Refresh (during trading hours) ===
+# === Auto Refresh (trading hours only) ===
 if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
-    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # 10 min refresh
+    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)
 
-# === Strategy Dropdown ===
+# === Strategy Selection ===
 strategy_option = st.sidebar.selectbox("Select Strategy Version", ["Strategy 1"])
 
-# === Live Prediction ===
+# === Prediction Function ===
 def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     start_str = start_time_ist.strftime("%Y-%m-%d %H:%M:%S")
     end_str = end_time_ist.strftime("%Y-%m-%d %H:%M:%S")
@@ -75,6 +75,7 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
         df.sort_values(by='timestamp', inplace=True)
         df.reset_index(drop=True, inplace=True)
 
+        # Add Features
         df['SMA_10'] = df['close'].rolling(window=10).mean()
         df['EMA_10'] = df['close'].ewm(span=10, adjust=False).mean()
         df['Momentum'] = df['close'] - df['close'].shift(10)
@@ -88,54 +89,75 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
             return
 
         proba = buy_model.predict_proba(latest)[0]
-        buy_signal = int(proba[1] > 0.5)
+        confidence = proba[1] * 100
         rr_signal = rr_model.predict(latest)[0]
+        buy_signal = int(confidence > 50)
+
+        # Confidence Label
+        if confidence >= 90:
+            strength = "🔥 Strong BUY"
+            color = "green"
+        elif confidence >= 70:
+            strength = "✅ Moderate BUY"
+            color = "green"
+        elif confidence >= 50:
+            strength = "⚠️ Weak BUY"
+            color = "orange"
+        elif confidence >= 30:
+            strength = "⚠️ Weak SELL"
+            color = "orange"
+        elif confidence >= 10:
+            strength = "❌ Moderate SELL"
+            color = "red"
+        else:
+            strength = "💀 Strong SELL"
+            color = "darkred"
 
         st.metric("🕒 Last Candle", df['timestamp'].iloc[-1].strftime("%Y-%m-%d %H:%M:%S"))
         st.metric("📈 Signal", "BUY" if buy_signal == 1 else "HOLD / SELL")
-        st.metric("🎯 Confidence", f"{proba[1]*100:.2f}%")
+        st.markdown(f"### 🎯 **Confidence**: <span style='color:{color}'>{confidence:.2f}% - {strength}</span>", unsafe_allow_html=True)
         st.metric("📊 Risk/Reward", f"{rr_signal:.4f}")
         st.dataframe(df.tail(10), use_container_width=True)
 
-        # Trade Entry Timer
+        # Timer
         next_candle_time = df['timestamp'].iloc[-1] + timedelta(minutes=interval_minutes)
         remaining = next_candle_time - datetime.now(ZoneInfo("Asia/Kolkata"))
         st.info(f"⏳ Time until next candle: {remaining.seconds // 60}m {remaining.seconds % 60}s")
     else:
         st.error("⚠️ No candle data returned from Groww API.")
 
-# === Run Prediction ===
+# === Run Live Prediction ===
 live_predict()
 
-# === Retrain Model Button + Log ===
-st.sidebar.markdown("---")
-st.sidebar.subheader("🧠 Retrain")
-if st.sidebar.button("🧠 Retrain Model"):
-    with st.expander("📄 Retrain Logs", expanded=True):
-        st.info("🔄 Retraining started...")
-        log_placeholder = st.empty()
+# === Manual Refresh ===
+if st.button("🔁 Refresh Now"):
+    st.rerun()
 
-        def stream_logs():
+# === Retrain Button ===
+st.sidebar.markdown("---")
+if st.sidebar.button("🚀 Retrain Strategy 1"):
+    st.sidebar.info("Retraining started...")
+
+    with st.expander("📦 Retraining Log"):
+        with st.spinner("Retraining in progress..."):
             process = subprocess.Popen(
                 [sys.executable, "strategy_1_retrain.py"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
+                text=True
             )
-            logs = ""
-            for line in iter(process.stdout.readline, ''):
-                logs += line
-                log_placeholder.code(logs, language='bash')
-            process.stdout.close()
-            process.wait()
+            log_output = ""
+            while True:
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                log_output += line
+                st.code(log_output, language="bash")
+                time.sleep(0.2)
+
             if process.returncode == 0:
-                st.success("✅ Retraining completed.")
+                st.sidebar.success("✅ Retraining complete.")
+                st.success("Model retrained successfully. Click Refresh to load new models.")
             else:
-                st.error("❌ Retraining failed. Check the logs above.")
-
-        thread = threading.Thread(target=stream_logs)
-        thread.start()
-
-# === Manual Refresh Button ===
-if st.button("🔁 Refresh Now"):
-    st.rerun()
+                st.sidebar.error("❌ Retraining failed.")
+                st.error("Error occurred during retraining.")
