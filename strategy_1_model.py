@@ -12,8 +12,11 @@ warnings.filterwarnings("ignore")
 # --- Load Data ---
 from data import load_data
 
-# Read token from env or config (if you're running via Streamlit)
-AUTH_TOKEN = os.getenv("GROWW_API_AUTH_TOKEN")  # Make sure this is set in your .env or Streamlit app
+# Read token from env or config
+AUTH_TOKEN = os.getenv("GROWW_API_AUTH_TOKEN")
+if not AUTH_TOKEN:
+    raise ValueError("⚠️ GROWW_API_AUTH_TOKEN not set in environment.")
+
 groww, df_4, df_3, _, _ = load_data(AUTH_TOKEN)
 
 # --- Prepare DataFrame ---
@@ -77,7 +80,7 @@ macd, sig_line = compute_macd(df)
 df['MACD'] = macd
 df['Signal_Line'] = sig_line
 
-# --- Labeling (Buy Signal Logic) ---
+# --- Labeling ---
 df['Buy_Signal'] = 0
 df.loc[(df['RSI'] < 30) | ((df['Momentum'] > 0) & (df['close'] > (2 * (df['SMA_10'] + df['EMA_10'])) / 3)), 'Buy_Signal'] = 1
 df.loc[~((df['RSI'] > 70) | ((df['Momentum'] < 0) & (df['close'] < (2 * (df['SMA_10'] + df['EMA_10'])) / 3))), 'Buy_Signal'] = 1
@@ -92,13 +95,13 @@ req_cols = ['SMA_10', 'EMA_10', 'RSI', 'Momentum', 'Volatility', 'Buy_Signal', '
 df.dropna(subset=req_cols, inplace=True)
 df.ffill(inplace=True)
 
-# --- Balancing ---
+# --- Balance Dataset ---
 df_1 = df[df['Buy_Signal'] == 1]
 n_pos = len(df_1)
 df_0 = df[df['Buy_Signal'] == 0].sample(n=n_pos, replace=(n_pos > len(df[df['Buy_Signal'] == 0])), random_state=42)
 df_balanced = pd.concat([df_1, df_0]).sample(frac=1, random_state=42)
 
-# --- Train ---
+# --- Train Models ---
 features = ['SMA_10', 'EMA_10', 'RSI', 'Momentum', 'Volatility']
 X = df_balanced[features]
 y_buy = df_balanced['Buy_Signal']
@@ -136,10 +139,9 @@ print("✅ Risk-Reward MSE:", mean_squared_error(y_test_rr, y_pred_rr))
 os.makedirs("models", exist_ok=True)
 joblib.dump(buy_model, 'models/buy_model_latest.pkl')
 joblib.dump(rr_model, 'models/rr_model_latest.pkl')
+print("💾 Models saved in 'models/' directory.")
 
-print("💾 First-time models saved in 'models/' directory.")
-
-# Export RSI for reuse
+# --- Export reusable RSI function ---
 def compute_rsi_for_live(series, period=14):
     return compute_rsi(series, period)
 compute_rsi = compute_rsi_for_live
