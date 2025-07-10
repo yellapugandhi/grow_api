@@ -1,15 +1,14 @@
 from growwapi import GrowwAPI
 import pandas as pd
 import datetime
- 
-# Groww API Credentials (Replace with your actual credentials)
-API_AUTH_TOKEN = "eyJraWQiOiJaTUtjVXciLCJhbGciOiJFUzI1NiJ9.eyJleHAiOjE3NTAxMjAyMDAsImlhdCI6MTc1MDA1MjQyNCwibmJmIjoxNzUwMDUyNDI0LCJzdWIiOiJ7XCJ0b2tlblJlZklkXCI6XCIyODA0NjY0Yi1lYTQxLTQ3YjItOTg1OS0wYTU4MDljZTBiNmZcIixcInZlbmRvckludGVncmF0aW9uS2V5XCI6XCJlMzFmZjIzYjA4NmI0MDZjODg3NGIyZjZkODQ5NTMxM1wiLFwidXNlckFjY291bnRJZFwiOlwiMzNiNmI0ZmItYjUzYS00NGRmLWFhZGItMzA4N2RiMjU3NTczXCIsXCJkZXZpY2VJZFwiOlwiODU4ZDUyYmYtNjlmNC01ZjBmLTg0NDAtMGRmZTk0OGI3NjgxXCIsXCJzZXNzaW9uSWRcIjpcImQ5YmFlODZhLTIyZTctNDMyNy1iYWQ3LWJmMDQ1OTIyOTRhN1wiLFwiYWRkaXRpb25hbERhdGFcIjpcIno1NC9NZzltdjE2WXdmb0gvS0EwYk4zUFloTGFEZGt1ZlBCYU5zRDhLTnhYeVpHZmF5OEk2cVpSdER6Q3ZIQ0tcIixcInJvbGVcIjpcIm9yZGVyLWJhc2ljLGxpdmVfZGF0YS1iYXNpYyxub25fdHJhZGluZy1iYXNpYyxvcmRlcl9yZWFkX29ubHktYmFzaWNcIixcInZhbGlkSXBzXCI6XCJcIixcInNvdXJjZUlwQWRkcmVzc1wiOlwiNDkuMjA1LjI0Ni4xMjMsMTcyLjY4LjE2Ni4xNTksMzUuMjQxLjIzLjEyM1wiLFwidHdvRmFFeHBpcnlUc1wiOjE3NTAxMjAyMDAwMDB9IiwiaXNzIjoiYXBleC1hdXRoLXByb2QtYXBwIn0.qRSTxa3tONUFEYZSx-5dcyIFWfysUkCYwxEsiBSUjYk_HQi9tTzEGuHC3aSfr-n0t-TCvffIVhmJS8cFXEcSBA"
-# Initialize Groww API
+
+# === Groww API Credentials ===
+API_AUTH_TOKEN = "eyJraWQiOiJaTUtjVXciLCJhbGciOiJFUzI1NiJ9.eyJleHAiOjE3NTIxOTM4MDAsImlhdCI6MTc1MjEyNDk3MCwibmJmIjoxNzUyMTI0OTcwLCJzdWIiOiJ7XCJ0b2tlblJlZklkXCI6XCI5YWIxYTAxZS1mZmI4LTQ5Y2YtYTMyOC00ZmRkZDYzMWVhYjRcIixcInZlbmRvckludGVncmF0aW9uS2V5XCI6XCJlMzFmZjIzYjA4NmI0MDZjODg3NGIyZjZkODQ5NTMxM1wiLFwidXNlckFjY291bnRJZFwiOlwiMzNiNmI0ZmItYjUzYS00NGRmLWFhZGItMzA4N2RiMjU3NTczXCIsXCJkZXZpY2VJZFwiOlwiODU4ZDUyYmYtNjlmNC01ZjBmLTg0NDAtMGRmZTk0OGI3NjgxXCIsXCJzZXNzaW9uSWRcIjpcImVlODFmZjM4LWIwMjAtNDYwNy1hZjM0LWRjYTI0MmQ3Zjg5MlwiLFwiYWRkaXRpb25hbERhdGFcIjpcIno1NC9NZzltdjE2WXdmb0gvS0EwYk4zUFloTGFEZGt1ZlBCYU5zRDhLTnhSTkczdTlLa2pWZDNoWjU1ZStNZERhWXBOVi9UOUxIRmtQejFFQisybTdRPT1cIixcInJvbGVcIjpcIm9yZGVyLWJhc2ljLGxpdmVfZGF0YS1iYXNpYyxub25fdHJhZGluZy1iYXNpYyxvcmRlcl9yZWFkX29ubHktYmFzaWNcIixcInNvdXJjZUlwQWRkcmVzc1wiOlwiNDkuMjA1LjI0Ni4xMjMsMTcyLjY4LjE2Ni4xNDUsMzUuMjQxLjIzLjEyM1wiLFwidHdvRmFFeHBpcnlUc1wiOjE3NTIxOTM4MDAwMDB9IiwiaXNzIjoiYXBleC1hdXRoLXByb2QtYXBwIn0.Q8AUUjRYNT1t7giofTCouO5HQbV0cTagosPJ7oAjMlV8WMAJwecDx3p1vZEDvxDRuK6oKHFjMDV1qbEQ_zYQPA"
 groww = GrowwAPI(API_AUTH_TOKEN)
 
+# === Get All Instruments ===
 instruments_df = groww.get_all_instruments()
 print(instruments_df.head())
-
 
 instruments_df['expiry_date'] = pd.to_datetime(instruments_df['expiry_date'])
 
@@ -18,66 +17,67 @@ instruments_df[
     (instruments_df['strike_price'] == '25100') &
     (instruments_df['instrument_type'] == 'CE') &
     (instruments_df['expiry_date'] == '2025-06-12')
-    ]
+]
 
-# last 4th month data
-start_time = "2025-02-10 09:15:00"
-end_time = "2025-03-09 15:15:00"
- 
+# === Automated Date Setup ===
+today = datetime.datetime.now()
+
+# 4th month ago
+start_time = (today - datetime.timedelta(days=120)).strftime("%Y-%m-%d 09:15:00")
+end_time = (today - datetime.timedelta(days=90)).strftime("%Y-%m-%d 15:15:00")
+
 historical_data_120days = groww.get_historical_candle_data(
     trading_symbol="NIFTY",
     exchange=groww.EXCHANGE_NSE,
     segment=groww.SEGMENT_CASH,
     start_time=start_time,
     end_time=end_time,
-    interval_in_minutes=240 # Increased interval to 60 minutes
+    interval_in_minutes=240
 )
 print(historical_data_120days)
 df_4 = historical_data_120days
 
-# last 3rd month data
-start_time = "2025-03-10 09:15:00"
-end_time = "2025-04-09 15:15:00"
- 
+# 3rd month ago
+start_time = (today - datetime.timedelta(days=90)).strftime("%Y-%m-%d 09:15:00")
+end_time = (today - datetime.timedelta(days=60)).strftime("%Y-%m-%d 15:15:00")
+
 historical_data_90days = groww.get_historical_candle_data(
     trading_symbol="NIFTY",
     exchange=groww.EXCHANGE_NSE,
     segment=groww.SEGMENT_CASH,
     start_time=start_time,
     end_time=end_time,
-    interval_in_minutes= 60 # Changed interval to 1 day
+    interval_in_minutes=60
 )
 print(historical_data_90days)
 df_3 = historical_data_90days
 
-# last 2nd month data
-start_time = "2025-04-10 09:15:00"
-end_time = "2025-05-09 15:15:00"
- 
+# 2nd month ago
+start_time = (today - datetime.timedelta(days=60)).strftime("%Y-%m-%d 09:15:00")
+end_time = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d 15:15:00")
+
 historical_data_60days = groww.get_historical_candle_data(
     trading_symbol="NIFTY",
     exchange=groww.EXCHANGE_NSE,
     segment=groww.SEGMENT_CASH,
     start_time=start_time,
     end_time=end_time,
-    interval_in_minutes=10 # Changed interval to 10 minutes
+    interval_in_minutes=10
 )
 print(historical_data_60days)
-
 df_2 = historical_data_60days
 
-# last_data_30days
-start_time = "2025-05-11 09:15:00"
-end_time = "2025-06-10 15:15:00"
- 
+# last 30 days
+start_time = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d 09:15:00")
+end_time = today.strftime("%Y-%m-%d 15:15:00")
+
 last_data_30days = groww.get_historical_candle_data(
     trading_symbol="NIFTY",
     exchange=groww.EXCHANGE_NSE,
     segment=groww.SEGMENT_CASH,
     start_time=start_time,
     end_time=end_time,
-    interval_in_minutes=10 # Changed interval to 10 minutes
+    interval_in_minutes=10
 )
 print(last_data_30days)
-
 new_live_data = last_data_30days
