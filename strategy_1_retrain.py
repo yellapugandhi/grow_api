@@ -10,7 +10,12 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # ---------- Load Historical + New Data ----------
-from data import  df_2, new_live_data  # Ensure this is available
+from data import load_data
+
+# Inject your token here (replace manually or use streamlit state)
+AUTH_TOKEN = "YOUR_API_AUTH_TOKEN"
+
+_, _, df_2, new_live_data, _ = load_data(AUTH_TOKEN)
 
 # Convert raw format to DataFrame
 def prepare_df(raw_data):
@@ -18,7 +23,6 @@ def prepare_df(raw_data):
                       columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
     return df
-
 
 df_2 = prepare_df(df_2)
 df_new = prepare_df(new_live_data)
@@ -76,39 +80,25 @@ df['Signal_Line'] = signal_line
 
 # Targets
 df['Buy_Signal'] = 0
-# Basic signal logic
 df.loc[(df['RSI'] < 30) | ((df['Momentum'] > 0) & (df['close'] > (2 * (df['SMA_10'] + df['EMA_10'])) / 3)), 'Buy_Signal'] = 1
-# Inverse logic for not overbought
 df.loc[~((df['RSI'] > 70) | ((df['Momentum'] < 0) & (df['close'] < (2 * (df['SMA_10'] + df['EMA_10'])) / 3))), 'Buy_Signal'] = 1
-# Stochastic oversold
 df.loc[((k < 20) | (d < 20)) & (df['Buy_Signal'] == 0), 'Buy_Signal'] = 1
-# MACD bullish crossover
 df.loc[((macd > signal_line) & (signal_line.isnull().all())) & (df['Buy_Signal'] == 0), 'Buy_Signal'] = 1
-# Price outside Bollinger Bands
 df.loc[((df['close'] < df['BB_Lower']) | (df['close'] > df['BB_Upper'])) & (df['Buy_Signal'] == 0), 'Buy_Signal'] = 1
 
-# Calculate Risk-Reward
+# Risk-Reward
 df['Risk_Reward'] = (df['high'] - df['low']) / df['close']
 
-# Drop NaNs
+# Clean NaNs
 required_columns = ['SMA_10', 'EMA_10', 'RSI', 'Momentum', 'Volatility', 'Buy_Signal', 'Risk_Reward']
 df.dropna(subset=required_columns, inplace=True)
 df.ffill(inplace=True)
 
-# ---------- Balance Buy Signal ----------
-# Count positive class instances
+# ---------- Balance Dataset ----------
 df_1 = df[df['Buy_Signal'] == 1]
 n_pos = len(df_1)
-# Count negative class instances
 n_neg = len(df[df['Buy_Signal'] == 0])
-
-# Sample negative class
-if n_neg >= n_pos:
-    df_0 = df[df['Buy_Signal'] == 0].sample(n=n_pos, random_state=42)
-else:
-    df_0 = df[df['Buy_Signal'] == 0].sample(n=n_pos, replace=True, random_state=42)
-
-# Combine and shuffle
+df_0 = df[df['Buy_Signal'] == 0].sample(n=n_pos, replace=(n_neg < n_pos), random_state=42)
 df_balanced = pd.concat([df_1, df_0]).sample(frac=1, random_state=42)
 
 # ---------- Train Models ----------
@@ -117,11 +107,10 @@ X = df_balanced[features]
 y_buy = df_balanced['Buy_Signal']
 y_rr = df_balanced['Risk_Reward']
 
-# Split datasets
 X_train, X_test, y_train_buy, y_test_buy = train_test_split(X, y_buy, test_size=0.2, random_state=42)
 _, _, y_train_rr, y_test_rr = train_test_split(X, y_rr, test_size=0.2, random_state=42)
 
-# Hyperparameter tuning for classifier
+# Classifier tuning
 clf_params = {
     'n_estimators': [300, 500, 1000],
     'max_depth': [10, 30, 50, None],
@@ -138,7 +127,7 @@ clf_search = RandomizedSearchCV(
 clf_search.fit(X_train, y_train_buy)
 buy_model = clf_search.best_estimator_
 
-# Train regressor
+# Regressor training
 rr_model = RandomForestRegressor(n_estimators=3000, max_depth=50, random_state=42)
 rr_model.fit(X_train, y_train_rr)
 
@@ -149,7 +138,7 @@ y_pred_rr = rr_model.predict(X_test)
 print("✅ Buy Model Accuracy:", accuracy_score(y_test_buy, y_pred_buy))
 print("✅ Risk-Reward MSE:", mean_squared_error(y_test_rr, y_pred_rr))
 
-# ---------- Save Models ----------
+# Save models
 os.makedirs("models", exist_ok=True)
 joblib.dump(buy_model, 'models/buy_model_latest.pkl')
 joblib.dump(rr_model, 'models/rr_model_latest.pkl')
