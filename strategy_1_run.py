@@ -5,9 +5,8 @@ from zoneinfo import ZoneInfo
 from growwapi import GrowwAPI
 import joblib
 import numpy as np
-import os
-import subprocess
 from functools import lru_cache
+import os
 
 st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 
@@ -15,22 +14,19 @@ st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 st.sidebar.title("🔐 Groww API Auth")
 api_key = st.sidebar.text_input("Enter your Groww API token", type="password")
 
-if not api_key:
-    st.warning("Please enter your Groww API token in the sidebar.")
-    st.stop()
-
-# Set token for downstream use
-os.environ["GROWW_API_AUTH_TOKEN"] = api_key
-
-# === Optional: Trigger Retraining ===
+# === Retrain Model Button ===
 if st.sidebar.button("🧠 Retrain Model"):
-    with st.spinner("Retraining in progress..."):
-        result = subprocess.run(["python", "train_strategy_1.py"], capture_output=True, text=True)
-        st.code(result.stdout + "\n" + result.stderr)
-        if result.returncode == 0:
-            st.success("✅ Retraining completed successfully.")
+    with st.spinner("Retraining... Please wait."):
+        result = os.system("python train_strategy_1.py")
+        if result == 0:
+            st.success("✅ Retraining completed!")
+            st.rerun()
         else:
             st.error("❌ Retraining failed.")
+
+# === Block if no token ===
+if not api_key:
+    st.warning("Please enter your Groww API token in the sidebar.")
     st.stop()
 
 # === Initialize Groww API ===
@@ -60,11 +56,11 @@ start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
 
-# === Auto Refresh (only in trading hours) ===
+# === Auto Refresh in Market Hours ===
 if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
-    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)  # Refresh every 10 mins
+    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)
 
-# === Strategy Comparison Dropdown ===
+# === Strategy Dropdown ===
 strategy_option = st.sidebar.selectbox("Select Strategy Version", ["Strategy 1"])
 
 # === Main Prediction Function ===
@@ -119,7 +115,7 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     else:
         st.error("⚠️ No candle data returned from Groww API.")
 
-# === Run Live Prediction ===
+# === Run Prediction ===
 live_predict()
 
 # === Manual Refresh ===
