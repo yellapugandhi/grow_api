@@ -6,15 +6,16 @@ import datetime
 API_AUTH_TOKEN = "eyJraWQiOiJaTUtjVXciLCJhbGciOiJFUzI1NiJ9.eyJleHAiOjE3NTIxOTM4MDAsImlhdCI6MTc1MjEyNDk3MCwibmJmIjoxNzUyMTI0OTcwLCJzdWIiOiJ7XCJ0b2tlblJlZklkXCI6XCI5YWIxYTAxZS1mZmI4LTQ5Y2YtYTMyOC00ZmRkZDYzMWVhYjRcIixcInZlbmRvckludGVncmF0aW9uS2V5XCI6XCJlMzFmZjIzYjA4NmI0MDZjODg3NGIyZjZkODQ5NTMxM1wiLFwidXNlckFjY291bnRJZFwiOlwiMzNiNmI0ZmItYjUzYS00NGRmLWFhZGItMzA4N2RiMjU3NTczXCIsXCJkZXZpY2VJZFwiOlwiODU4ZDUyYmYtNjlmNC01ZjBmLTg0NDAtMGRmZTk0OGI3NjgxXCIsXCJzZXNzaW9uSWRcIjpcImVlODFmZjM4LWIwMjAtNDYwNy1hZjM0LWRjYTI0MmQ3Zjg5MlwiLFwiYWRkaXRpb25hbERhdGFcIjpcIno1NC9NZzltdjE2WXdmb0gvS0EwYk4zUFloTGFEZGt1ZlBCYU5zRDhLTnhSTkczdTlLa2pWZDNoWjU1ZStNZERhWXBOVi9UOUxIRmtQejFFQisybTdRPT1cIixcInJvbGVcIjpcIm9yZGVyLWJhc2ljLGxpdmVfZGF0YS1iYXNpYyxub25fdHJhZGluZy1iYXNpYyxvcmRlcl9yZWFkX29ubHktYmFzaWNcIixcInNvdXJjZUlwQWRkcmVzc1wiOlwiNDkuMjA1LjI0Ni4xMjMsMTcyLjY4LjE2Ni4xNDUsMzUuMjQxLjIzLjEyM1wiLFwidHdvRmFFeHBpcnlUc1wiOjE3NTIxOTM4MDAwMDB9IiwiaXNzIjoiYXBleC1hdXRoLXByb2QtYXBwIn0.Q8AUUjRYNT1t7giofTCouO5HQbV0cTagosPJ7oAjMlV8WMAJwecDx3p1vZEDvxDRuK6oKHFjMDV1qbEQ_zYQPA"
 groww = GrowwAPI(API_AUTH_TOKEN)
 
-# === Load Local instruments.csv ===
+# === Load Local Instrument Metadata ===
 instruments_df = pd.read_csv("instruments.csv")
 
-# === ✅ Monkey Patch to Prevent File Write Access ===
+# === PATCH: Block GrowwAPI from writing to file system ===
+# Inject local DataFrame and override internal methods
 groww.instruments = instruments_df
 groww._load_instruments = lambda: None
 groww._download_and_load_instruments = lambda: instruments_df
 
-# ✅ Patch symbol lookup method
+# === PATCH: Replace the symbol-based lookup to prevent internal reload ===
 def safe_get_instrument_by_groww_symbol(symbol):
     row = instruments_df[instruments_df['groww_symbol'] == symbol]
     if row.empty:
@@ -23,25 +24,53 @@ def safe_get_instrument_by_groww_symbol(symbol):
 
 groww.get_instrument_by_groww_symbol = safe_get_instrument_by_groww_symbol
 
-# === Automated Data Collection (4 months to today) ===
+# === Automated Time Windows for Historical Data Segments ===
 today = datetime.datetime.now()
 
-# 4th month ago
+# -- 4th Month Ago (120–90 Days Ago), 4-hr Interval --
 start_time = (today - datetime.timedelta(days=120)).strftime("%Y-%m-%d 09:15:00")
-end_time = (today - datetime.timedelta(days=90)).strftime("%Y-%m-%d 15:15:00")
-df_4 = groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start_time, end_time, 240)
+end_time   = (today - datetime.timedelta(days=90)).strftime("%Y-%m-%d 15:15:00")
+df_4 = groww.get_historical_candle_data(
+    trading_symbol="NIFTY",
+    exchange=groww.EXCHANGE_NSE,
+    segment=groww.SEGMENT_CASH,
+    start_time=start_time,
+    end_time=end_time,
+    interval_in_minutes=240
+)
 
-# 3rd month ago
+# -- 3rd Month Ago (90–60 Days Ago), 1-hr Interval --
 start_time = (today - datetime.timedelta(days=90)).strftime("%Y-%m-%d 09:15:00")
-end_time = (today - datetime.timedelta(days=60)).strftime("%Y-%m-%d 15:15:00")
-df_3 = groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start_time, end_time, 60)
+end_time   = (today - datetime.timedelta(days=60)).strftime("%Y-%m-%d 15:15:00")
+df_3 = groww.get_historical_candle_data(
+    trading_symbol="NIFTY",
+    exchange=groww.EXCHANGE_NSE,
+    segment=groww.SEGMENT_CASH,
+    start_time=start_time,
+    end_time=end_time,
+    interval_in_minutes=60
+)
 
-# 2nd month ago
+# -- 2nd Month Ago (60–30 Days Ago), 10-min Interval --
 start_time = (today - datetime.timedelta(days=60)).strftime("%Y-%m-%d 09:15:00")
-end_time = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d 15:15:00")
-df_2 = groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start_time, end_time, 10)
+end_time   = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d 15:15:00")
+df_2 = groww.get_historical_candle_data(
+    trading_symbol="NIFTY",
+    exchange=groww.EXCHANGE_NSE,
+    segment=groww.SEGMENT_CASH,
+    start_time=start_time,
+    end_time=end_time,
+    interval_in_minutes=10
+)
 
-# last 30 days
+# -- Last 30 Days, 10-min Interval --
 start_time = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d 09:15:00")
-end_time = today.strftime("%Y-%m-%d 15:15:00")
-new_live_data = groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start_time, end_time, 10)
+end_time   = today.strftime("%Y-%m-%d 15:15:00")
+new_live_data = groww.get_historical_candle_data(
+    trading_symbol="NIFTY",
+    exchange=groww.EXCHANGE_NSE,
+    segment=groww.SEGMENT_CASH,
+    start_time=start_time,
+    end_time=end_time,
+    interval_in_minutes=10
+)
