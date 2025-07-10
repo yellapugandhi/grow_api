@@ -7,6 +7,7 @@ import numpy as np
 from functools import lru_cache
 import subprocess
 import sys
+import os
 
 # 1) Page setup + header
 st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
@@ -71,7 +72,6 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     st.write("• Symbol:", symbol)
     st.write("• Interval:", interval_minutes, "mins")
 
-    # instrument lookup
     try:
         sel = groww.get_instrument_by_groww_symbol(symbol)
         st.write("🧾 Instrument:", sel)
@@ -79,7 +79,6 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
         st.error(f"❌ Instrument lookup failed: {e}")
         return
 
-    # API call
     try:
         raw = groww.get_historical_candle_data(
             trading_symbol=sel['trading_symbol'],
@@ -101,7 +100,6 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
         st.error("⚠️ No candle data returned.")
         return
 
-    # build DataFrame
     df = pd.DataFrame(candles, columns=['timestamp','open','high','low','close','volume'])
     df['timestamp'] = (
         pd.to_datetime(df['timestamp'], unit='s', utc=True)
@@ -110,7 +108,6 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     df.sort_values('timestamp', inplace=True)
     df.reset_index(drop=True, inplace=True)
 
-    # features
     df['SMA_10'] = df['close'].rolling(10).mean()
     df['EMA_10'] = df['close'].ewm(span=10, adjust=False).mean()
     df['Momentum'] = df['close'] - df['close'].shift(10)
@@ -122,7 +119,6 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
         st.warning("Not enough data to predict.")
         return
 
-    # inference
     try:
         proba = buy_model.predict_proba(latest)[0]
         rr_val = rr_model.predict(latest)[0]
@@ -133,7 +129,6 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     conf = proba[1]*100
     buy = proba[1] > 0.5
 
-    # display
     st.subheader("📈 Prediction")
     st.write("• Last candle:", df['timestamp'].iloc[-1])
     st.write("• Signal:", "BUY" if buy else "HOLD/SELL")
@@ -141,15 +136,15 @@ def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
     st.write(f"• Risk/Reward: {rr_val:.4f}")
     st.dataframe(df.tail(10), use_container_width=True)
 
-    # timer
     next_time = df['timestamp'].iloc[-1] + timedelta(minutes=interval_minutes)
     rem = next_time - datetime.now(ZoneInfo("Asia/Kolkata"))
     st.info(f"⏳ Next candle in: {rem.seconds//60}m {rem.seconds%60}s")
 
-# 9) Run live prediction
-live_predict()
+# 🛠️ 9) Sidebar Prediction Trigger
+if st.sidebar.button("▶ Run Live Prediction"):
+    live_predict()
 
-# 10) Retrain
+# 🔁 10) Retrain
 st.sidebar.markdown("### 🧠 Retrain")
 if st.sidebar.button("🔁 Retrain Model"):
     st.info("📡 Retraining…")
@@ -171,6 +166,6 @@ if st.sidebar.button("🔁 Retrain Model"):
     except Exception as e:
         st.error(f"❌ Retrain error: {e}")
 
-# 11) Manual refresh
+# 🔃 11) Manual Refresh
 if st.button("🔃 Refresh Now"):
     st.experimental_rerun()
