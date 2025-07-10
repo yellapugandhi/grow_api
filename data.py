@@ -1,38 +1,31 @@
+# === data.py ===
 import pandas as pd
 import datetime
 from growwapi import GrowwAPI
 
-def load_data(auth_token: str):
-    groww = GrowwAPI(auth_token)
+def prepare_df(raw_data):
+    df = pd.DataFrame(raw_data['candles'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+    return df
 
-    # Load local instruments.csv
+def load_data(auth_token):
+    groww = GrowwAPI(auth_token)
     instruments_df = pd.read_csv("instruments.csv")
 
-    # Patch to avoid GrowwAPI file permission issues on Streamlit Cloud
     groww.instruments = instruments_df
     groww._load_instruments = lambda: None
     groww._download_and_load_instruments = lambda: instruments_df
 
     today = datetime.datetime.now()
 
-    # 4th month ago (240-minute candles)
-    start_time = (today - datetime.timedelta(days=120)).strftime("%Y-%m-%d 09:15:00")
-    end_time   = (today - datetime.timedelta(days=90)).strftime("%Y-%m-%d 15:15:00")
-    df_4 = groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start_time, end_time, 240)
+    def fetch(start_offset, end_offset, interval):
+        start = (today - datetime.timedelta(days=start_offset)).strftime("%Y-%m-%d 09:15:00")
+        end   = (today - datetime.timedelta(days=end_offset)).strftime("%Y-%m-%d 15:15:00")
+        return groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start, end, interval)
 
-    # 3rd month ago (60-minute candles)
-    start_time = (today - datetime.timedelta(days=90)).strftime("%Y-%m-%d 09:15:00")
-    end_time   = (today - datetime.timedelta(days=60)).strftime("%Y-%m-%d 15:15:00")
-    df_3 = groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start_time, end_time, 60)
+    df_4 = fetch(120, 90, 240)
+    df_3 = fetch(90, 60, 60)
+    df_2 = fetch(60, 30, 10)
+    df_live = fetch(30, 0, 10)
 
-    # 2nd month ago (10-minute candles)
-    start_time = (today - datetime.timedelta(days=60)).strftime("%Y-%m-%d 09:15:00")
-    end_time   = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d 15:15:00")
-    df_2 = groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start_time, end_time, 10)
-
-    # Last 30 days (10-minute candles)
-    start_time = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d 09:15:00")
-    end_time   = today.strftime("%Y-%m-%d 15:15:00")
-    new_live_data = groww.get_historical_candle_data("NIFTY", groww.EXCHANGE_NSE, groww.SEGMENT_CASH, start_time, end_time, 10)
-
-    return groww, df_4, df_3, df_2, new_live_data
+    return groww, df_4, df_3, df_2, df_live
