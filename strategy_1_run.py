@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 from growwapi import GrowwAPI
 import joblib
 import numpy as np
+import os
+import subprocess
 from functools import lru_cache
 
 st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
@@ -17,6 +19,21 @@ if not api_key:
     st.warning("Please enter your Groww API token in the sidebar.")
     st.stop()
 
+# Set token for downstream use
+os.environ["GROWW_API_AUTH_TOKEN"] = api_key
+
+# === Optional: Trigger Retraining ===
+if st.sidebar.button("🧠 Retrain Model"):
+    with st.spinner("Retraining in progress..."):
+        result = subprocess.run(["python", "train_strategy_1.py"], capture_output=True, text=True)
+        st.code(result.stdout + "\n" + result.stderr)
+        if result.returncode == 0:
+            st.success("✅ Retraining completed successfully.")
+        else:
+            st.error("❌ Retraining failed.")
+    st.stop()
+
+# === Initialize Groww API ===
 groww = GrowwAPI(api_key)
 
 # === Cached Instrument Metadata ===
