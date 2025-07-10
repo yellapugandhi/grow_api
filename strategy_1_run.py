@@ -42,16 +42,14 @@ This trading signal predictor uses a combination of technical indicators and mac
 - **Risk/Reward Estimator** → Random Forest Regressor
 
 #### 🟢 Signal Strength Interpretation:
-
-    | Confidence %       | Label              | Meaning                                  |
-    |--------------------|--------------------|------------------------------------------|
-    | **90–100%**        | 🔥 Strong BUY      | Very high conviction — ideal entry zone. |
-    | **70–89.99%**      | ✅ Moderate BUY    | Good signal, with decent model backing.  |
-    | **50–69.99%**      | ⚠️ Weak BUY        | Slight positive bias — wait for confirmation. |
-    | **30–49.99%**      | ⚠️ Weak SELL       | Slight negative bias — stay cautious.    |
-    | **10–29.99%**      | ❌ Moderate SELL   | Selling pressure likely — avoid buying.  |
-    | **0–9.99%**        | 💀 Strong SELL     | Very bearish — exit or short if applicable. |
-
+| Confidence % | Meaning          | Strength         |
+|--------------|------------------|------------------|
+| 90%+         | Strong BUY       | 🔥               |
+| 70–89%       | Moderate BUY     | ✅               |
+| 50–69%       | Weak BUY         | ⚠️               |
+| 30–49%       | Weak SELL        | ⚠️               |
+| 10–29%       | Moderate SELL    | ❌               |
+| <10%         | Strong SELL      | 💀               |
 
 #### ⚙️ Strategy Flow:
 1. Fetch live candle data from Groww
