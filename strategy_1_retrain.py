@@ -9,15 +9,13 @@ import joblib
 import warnings
 warnings.filterwarnings("ignore")
 
-# ---------- Load Historical + New Data ----------
+# --- Load Groww API + Data ---
 from data import load_data
 
-# Inject your token here (replace manually or use streamlit state)
-AUTH_TOKEN = "YOUR_API_AUTH_TOKEN"
+AUTH_TOKEN = os.getenv("GROWW_API_AUTH_TOKEN")  # Set via Streamlit sidebar input or env
+groww, _, _, df_2, new_live_data = load_data(AUTH_TOKEN)
 
-_, _, df_2, new_live_data, _ = load_data(AUTH_TOKEN)
-
-# Convert raw format to DataFrame
+# --- Prepare Data ---
 def prepare_df(raw_data):
     df = pd.DataFrame(raw_data['candles'],
                       columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -27,13 +25,13 @@ def prepare_df(raw_data):
 df_2 = prepare_df(df_2)
 df_new = prepare_df(new_live_data)
 
-# Combine and clean
+# Combine
 df = pd.concat([df_2, df_new], ignore_index=True)
 df.drop_duplicates(subset=['timestamp'], inplace=True)
 df.sort_values(by='timestamp', inplace=True)
 df.reset_index(drop=True, inplace=True)
 
-# ---------- Feature Engineering ----------
+# --- Feature Engineering ---
 def compute_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -44,9 +42,9 @@ def compute_rsi(series, period=14):
 def compute_bollinger_bands(series, period=20):
     ma = series.rolling(window=period).mean()
     std = series.rolling(window=period).std()
-    upper_bband = ma + 2 * std
-    lower_bband = ma - 2 * std
-    return upper_bband, lower_bband
+    upper = ma + 2 * std
+    lower = ma - 2 * std
+    return upper, lower
 
 def compute_stochastic(df):
     low_14 = df['low'].rolling(window=14).min()
@@ -56,52 +54,50 @@ def compute_stochastic(df):
     return k, d
 
 def compute_macd(df):
-    ema_12 = df['close'].ewm(span=12, adjust=False).mean()
-    ema_26 = df['close'].ewm(span=26, adjust=False).mean()
-    macd = ema_12 - ema_26
-    signal_line = macd.ewm(span=9, adjust=False).mean()
-    return macd, signal_line
+    ema12 = df['close'].ewm(span=12, adjust=False).mean()
+    ema26 = df['close'].ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return macd, signal
 
-# Calculate indicators
+# Indicators
 df['SMA_10'] = df['close'].rolling(window=10).mean()
 df['EMA_10'] = df['close'].ewm(span=10, adjust=False).mean()
 df['Momentum'] = df['close'] - df['close'].shift(10)
 df['Volatility'] = df['close'].rolling(window=10).std()
 df['RSI'] = compute_rsi(df['close'])
-upper_bband, lower_bband = compute_bollinger_bands(df['close'])
-df['BB_Upper'] = upper_bband
-df['BB_Lower'] = lower_bband
+bb_u, bb_l = compute_bollinger_bands(df['close'])
+df['BB_Upper'] = bb_u
+df['BB_Lower'] = bb_l
 k, d = compute_stochastic(df)
 df['Stoch_K'] = k
 df['Stoch_D'] = d
-macd, signal_line = compute_macd(df)
+macd, sig_line = compute_macd(df)
 df['MACD'] = macd
-df['Signal_Line'] = signal_line
+df['Signal_Line'] = sig_line
 
-# Targets
+# --- Label Generation (Targets) ---
 df['Buy_Signal'] = 0
 df.loc[(df['RSI'] < 30) | ((df['Momentum'] > 0) & (df['close'] > (2 * (df['SMA_10'] + df['EMA_10'])) / 3)), 'Buy_Signal'] = 1
 df.loc[~((df['RSI'] > 70) | ((df['Momentum'] < 0) & (df['close'] < (2 * (df['SMA_10'] + df['EMA_10'])) / 3))), 'Buy_Signal'] = 1
 df.loc[((k < 20) | (d < 20)) & (df['Buy_Signal'] == 0), 'Buy_Signal'] = 1
-df.loc[((macd > signal_line) & (signal_line.isnull().all())) & (df['Buy_Signal'] == 0), 'Buy_Signal'] = 1
+df.loc[((macd > sig_line) & (sig_line.isnull().all())) & (df['Buy_Signal'] == 0), 'Buy_Signal'] = 1
 df.loc[((df['close'] < df['BB_Lower']) | (df['close'] > df['BB_Upper'])) & (df['Buy_Signal'] == 0), 'Buy_Signal'] = 1
 
-# Risk-Reward
 df['Risk_Reward'] = (df['high'] - df['low']) / df['close']
 
-# Clean NaNs
-required_columns = ['SMA_10', 'EMA_10', 'RSI', 'Momentum', 'Volatility', 'Buy_Signal', 'Risk_Reward']
-df.dropna(subset=required_columns, inplace=True)
+# Clean up
+required_cols = ['SMA_10', 'EMA_10', 'RSI', 'Momentum', 'Volatility', 'Buy_Signal', 'Risk_Reward']
+df.dropna(subset=required_cols, inplace=True)
 df.ffill(inplace=True)
 
-# ---------- Balance Dataset ----------
+# --- Balance Classes ---
 df_1 = df[df['Buy_Signal'] == 1]
 n_pos = len(df_1)
-n_neg = len(df[df['Buy_Signal'] == 0])
-df_0 = df[df['Buy_Signal'] == 0].sample(n=n_pos, replace=(n_neg < n_pos), random_state=42)
+df_0 = df[df['Buy_Signal'] == 0].sample(n=n_pos, replace=(n_pos > len(df[df['Buy_Signal'] == 0])), random_state=42)
 df_balanced = pd.concat([df_1, df_0]).sample(frac=1, random_state=42)
 
-# ---------- Train Models ----------
+# --- Train Models ---
 features = ['SMA_10', 'EMA_10', 'RSI', 'Momentum', 'Volatility']
 X = df_balanced[features]
 y_buy = df_balanced['Buy_Signal']
@@ -110,7 +106,6 @@ y_rr = df_balanced['Risk_Reward']
 X_train, X_test, y_train_buy, y_test_buy = train_test_split(X, y_buy, test_size=0.2, random_state=42)
 _, _, y_train_rr, y_test_rr = train_test_split(X, y_rr, test_size=0.2, random_state=42)
 
-# Classifier tuning
 clf_params = {
     'n_estimators': [300, 500, 1000],
     'max_depth': [10, 30, 50, None],
@@ -127,20 +122,18 @@ clf_search = RandomizedSearchCV(
 clf_search.fit(X_train, y_train_buy)
 buy_model = clf_search.best_estimator_
 
-# Regressor training
 rr_model = RandomForestRegressor(n_estimators=3000, max_depth=50, random_state=42)
 rr_model.fit(X_train, y_train_rr)
 
-# Evaluate
 y_pred_buy = buy_model.predict(X_test)
 y_pred_rr = rr_model.predict(X_test)
 
 print("✅ Buy Model Accuracy:", accuracy_score(y_test_buy, y_pred_buy))
 print("✅ Risk-Reward MSE:", mean_squared_error(y_test_rr, y_pred_rr))
 
-# Save models
+# --- Save Updated Models ---
 os.makedirs("models", exist_ok=True)
 joblib.dump(buy_model, 'models/buy_model_latest.pkl')
 joblib.dump(rr_model, 'models/rr_model_latest.pkl')
 
-print("💾 Models saved in 'models/' directory.")
+print("💾 Retrained models saved in 'models/' directory.")
