@@ -110,7 +110,6 @@ if page == "📉 Live Signal":
             st.error(f"Instrument lookup error: {e}")
             return
 
-        # Duration check to prevent API errors
         duration_minutes = (end_time_ist - start_time_ist).total_seconds() / 60
         safe_interval = max(interval_minutes, int(duration_minutes / 1400) + 1)
 
@@ -137,7 +136,6 @@ if page == "📉 Live Signal":
         df.sort_values('timestamp', inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        # Feature Engineering
         df['SMA_10'] = df['close'].rolling(10).mean()
         df['EMA_10'] = df['close'].ewm(span=10, adjust=False).mean()
         df['Momentum'] = df['close'] - df['close'].shift(10)
@@ -189,14 +187,13 @@ if page == "📉 Live Signal":
         st.markdown(f"### 📊 <b>Risk/Reward:</b> `{rr_val:.4f}`", unsafe_allow_html=True)
         st.dataframe(df.tail(10), use_container_width=True)
 
-    # Trigger live prediction
     live_predict()
 
 # 10) Retrain Page
 if page == "🧠 Retrain Model":
     st.title("🧠 Retrain Trading Models")
     if st.button("🔁 Start Retraining"):
-        st.info("📡 Retraining…")
+        st.info("📱 Retraining…")
         try:
             p = subprocess.Popen([sys.executable, "strategy_1_retrain.py"],
                                  stdout=subprocess.PIPE,
