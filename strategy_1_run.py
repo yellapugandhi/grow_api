@@ -8,12 +8,12 @@ from functools import lru_cache
 import subprocess
 import sys
 
-# === Page Setup ===
+# 1) Page setup + header
 st.set_page_config(page_title="Trading Signal Predictor", layout="wide")
 st.title("📈 Trading Signal Predictor")
 st.write("🔄 Initializing…")
 
-# === Groww API Auth ===
+# 2) Auth
 st.sidebar.title("🔐 Groww API Auth")
 api_key = st.sidebar.text_input("Enter your Groww API token", type="password")
 st.write("🔑 API key present?", bool(api_key))
@@ -23,27 +23,25 @@ if not api_key:
 
 groww = GrowwAPI(api_key)
 
-# === Instrument Load ===
+# 3) Load instruments.csv
 @lru_cache(maxsize=1)
 def load_instruments():
-    try:
-        df = pd.read_csv("instruments.csv", low_memory=False)
-        st.write("✅ Loaded instruments.csv:", df.shape)
-    except Exception as e:
-        st.error(f"❌ instruments.csv load failed: {e}")
-        raise
+    df = pd.read_csv("instruments.csv", low_memory=False)
     groww.instruments = df
     groww._load_instruments = lambda: None
     groww._download_and_load_instruments = lambda: df
-    groww.get_instrument_by_groww_symbol = lambda sym: df[df['groww_symbol'] == sym].iloc[0].to_dict()
+    groww.get_instrument_by_groww_symbol = (
+        lambda sym: df[df['groww_symbol'] == sym].iloc[0].to_dict()
+    )
     return df
 
 try:
     instruments_df = load_instruments()
-except:
+except Exception as e:
+    st.error(f"❌ Failed to load instruments: {e}")
     st.stop()
 
-# === Load Models ===
+# 4) Load ML models
 try:
     from strategy_1_model import buy_model, rr_model, compute_rsi
     st.write("✅ Models imported successfully")
@@ -51,7 +49,16 @@ except Exception as e:
     st.error(f"❌ Model import error: {e}")
     st.stop()
 
-# === Show Strategy Guide ===
+# 5) Time setup
+start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
+end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+now_ist = end_time_ist
+
+# 6) Auto-refresh during market hours
+if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
+    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)
+
+# === Strategy Guide Function ===
 def show_guide():
     st.title("📘 Strategy Guide – Signal Confidence Strength")
     st.markdown("""
@@ -60,6 +67,8 @@ def show_guide():
     ### 🔍 How Confidence Works:
     - The model outputs a probability that a candle is a **BUY signal**.
     - We translate this into **labels** for human-friendly interpretation.
+
+    ---
 
     ### 🧠 Confidence Strength Breakdown
 
@@ -72,42 +81,33 @@ def show_guide():
     | **10–29.99%**      | ❌ Moderate SELL   | Selling pressure likely — avoid buying.  |
     | **0–9.99%**        | 💀 Strong SELL     | Very bearish — exit or short if applicable. |
 
+    ---
+
     ### 💡 Tips:
     - Combine this with technical indicators (RSI, MACD) for better decisions.
     - Use **Strong BUY** or **Strong SELL** as clear entry/exit zones.
     - For **Weak signals**, observe next candles or add filters.
+
+    ---
     """)
 
-# === Sidebar Nav ===
-page = st.sidebar.radio("📚 Navigation", ["📈 Live Signal", "🧠 Retrain Model", "📘 Strategy Guide"])
-strategy_option = st.sidebar.selectbox("🧪 Strategy", ["Strategy 1"], index=0)
+# 7) Sidebar Nav
+page = st.sidebar.radio("🧭 Navigation", ["📉 Live Signal", "🧠 Retrain Model", "📘 Strategy Guide"])
+strategy_option = st.sidebar.selectbox("🧠 Strategy", ["Strategy 1"], index=0)
 
-# === Time Setup ===
-start_time_ist = datetime(2025, 6, 10, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
-end_time_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-now_ist = end_time_ist
-
-# Auto-refresh during market hours
-if datetime.strptime("09:15", "%H:%M").time() <= now_ist.time() <= datetime.strptime("15:30", "%H:%M").time():
-    st.markdown("<meta http-equiv='refresh' content='600'>", unsafe_allow_html=True)
-
-# === Guide Page ===
+# 8) Strategy Guide Page
 if page == "📘 Strategy Guide":
     show_guide()
     st.stop()
 
-# === Live Signal Page ===
-if page == "📈 Live Signal":
-    def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
-        st.subheader("📡 Fetching live data")
-        st.write("• Symbol:", symbol)
-        st.write("• Interval:", interval_minutes, "mins")
+# 9) Live Signal Page
+if page == "📉 Live Signal":
 
+    def live_predict(symbol="NSE-NIFTY", interval_minutes=10):
         try:
-            sel = groww.get_instrument_by_groww_symbol(symbol)
-            st.write("🧾 Instrument:", sel)
+            selected = groww.get_instrument_by_groww_symbol(symbol)
         except Exception as e:
-            st.error(f"❌ Instrument lookup failed: {e}")
+            st.error(f"Instrument lookup error: {e}")
             return
 
         # Duration check to prevent API errors
@@ -115,21 +115,19 @@ if page == "📈 Live Signal":
         safe_interval = max(interval_minutes, int(duration_minutes / 1400) + 1)
 
         try:
-            raw = groww.get_historical_candle_data(
-                trading_symbol=sel['trading_symbol'],
-                exchange=sel['exchange'],
-                segment=sel['segment'],
+            data = groww.get_historical_candle_data(
+                trading_symbol=selected['trading_symbol'],
+                exchange=selected['exchange'],
+                segment=selected['segment'],
                 start_time=start_time_ist.strftime("%Y-%m-%d %H:%M:%S"),
                 end_time=end_time_ist.strftime("%Y-%m-%d %H:%M:%S"),
                 interval_in_minutes=safe_interval
             )
         except Exception as e:
-            st.error(f"❌ API call error: {e}")
+            st.error(f"API error: {e}")
             return
 
-        candles = raw.get('candles') if isinstance(raw, dict) else None
-        st.write("📊 Candle count:", len(candles) if candles else 0)
-
+        candles = data.get("candles") if isinstance(data, dict) else None
         if not candles:
             st.error("⚠️ No candle data returned.")
             return
@@ -139,7 +137,7 @@ if page == "📈 Live Signal":
         df.sort_values('timestamp', inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        # Feature engineering
+        # Feature Engineering
         df['SMA_10'] = df['close'].rolling(10).mean()
         df['EMA_10'] = df['close'].ewm(span=10, adjust=False).mean()
         df['Momentum'] = df['close'] - df['close'].shift(10)
@@ -155,73 +153,69 @@ if page == "📈 Live Signal":
             proba = buy_model.predict_proba(latest)[0]
             rr_val = rr_model.predict(latest)[0]
         except Exception as e:
-            st.error(f"❌ Prediction error: {e}")
+            st.error(f"Prediction error: {e}")
             return
 
         conf = proba[1]*100
         buy = proba[1] > 0.5
 
-        # Display
         st.subheader("📈 Prediction")
         st.write("• Last candle:", df['timestamp'].iloc[-1])
-        st.write("• Signal:", "BUY" if buy else "HOLD/SELL")
+        st.write("• Signal:", "BUY" if buy else "HOLD / SELL")
 
-        # Confidence Label
         if conf >= 90:
-            label = "🔥 Strong BUY"
+            strength = "🔥 Strong BUY"
             color = "green"
         elif conf >= 70:
-            label = "✅ Moderate BUY"
+            strength = "✅ Moderate BUY"
             color = "green"
         elif conf >= 50:
-            label = "⚠️ Weak BUY"
+            strength = "⚠️ Weak BUY"
             color = "orange"
         elif conf >= 30:
-            label = "⚠️ Weak SELL"
+            strength = "⚠️ Weak SELL"
             color = "orange"
         elif conf >= 10:
-            label = "❌ Moderate SELL"
+            strength = "❌ Moderate SELL"
             color = "red"
         else:
-            label = "💀 Strong SELL"
+            strength = "💀 Strong SELL"
             color = "darkred"
 
         st.markdown(
-            f"### 🎯 <b>Confidence:</b> <span style='color:{color}'>{conf:.2f}% - {label}</span>",
+            f"### 🎯 <b>Confidence:</b> <span style='color:{color}'>{conf:.2f}% - {strength}</span>",
             unsafe_allow_html=True
         )
-
         st.markdown(f"### 📊 <b>Risk/Reward:</b> `{rr_val:.4f}`", unsafe_allow_html=True)
         st.dataframe(df.tail(10), use_container_width=True)
 
-    # Run Live Prediction
+    # Trigger live prediction
     live_predict()
 
-# === Retrain Model Page ===
+# 10) Retrain Page
 if page == "🧠 Retrain Model":
     st.title("🧠 Retrain Trading Models")
     if st.button("🔁 Start Retraining"):
-        st.info("📱 Starting retraining...")
+        st.info("📡 Retraining…")
         try:
-            process = subprocess.Popen(
-                [sys.executable, "strategy_1_retrain.py"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True
-            )
-            output_area = st.empty()
-            logs = ""
-
-            for line in process.stdout:
-                logs += line
-                output_area.code(logs)
-
-            process.wait()
-
-            if process.returncode == 0:
+            p = subprocess.Popen([sys.executable, "strategy_1_retrain.py"],
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT,
+                                 universal_newlines=True)
+            out = st.empty()
+            log = ""
+            for line in p.stdout:
+                log += line
+                out.code(log)
+            p.wait()
+            if p.returncode == 0:
                 st.success("✅ Retraining complete!")
-                st.rerun()
+                st.experimental_rerun()
             else:
-                st.error("❌ Retraining failed. Please check strategy_1_retrain.py.")
+                st.error("❌ Retraining failed.")
         except Exception as e:
-            st.error(f"❌ Error during retraining: {e}")
+            st.error(f"❌ Retrain error: {e}")
+
+# 11) Manual Refresh
+if st.button("🔃 Refresh Now"):
+    st.experimental_rerun()
